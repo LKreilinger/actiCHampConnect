@@ -1,0 +1,22 @@
+# List of untracked files to ignore
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Jupyter autosave copies
+.ipynb_checkpoints/
+
+# MATLAB editor autosave
+*.asv
+
+# PyCharm settings
+.idea/
+
+# MATLAB project metadata
+/resources/
+*.prj
+
+# C++ build intermediates and producer log
+*.obj
+*.log
