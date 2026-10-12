@@ -15,6 +15,7 @@ It was developed with a 32-channel actiCHamp Plus on Windows.
 - [What is implemented and what is not](#what-is-implemented-and-what-is-not)
 - [Changing and compiling the C++ code](#changing-and-compiling-the-c-code)
 - [Troubleshooting](#troubleshooting)
+- [Citation](#citation)
 - [License and third-party components](#license-and-third-party-components)
 
 ## How it works
@@ -280,6 +281,12 @@ print(ctypes.sizeof(SharedBuffer), SharedBuffer.impedances.offset, SharedBuffer.
 | Data looks like noise or the columns are shifted | The memory layouts do not match. See [If you change SharedBuffer.h](#if-you-change-sharedbufferh). |
 | `lost_samples()` is larger than zero | The reading side was too slow. Read more often or lower the sampling rate. |
 | A MEX function cannot be compiled because the file is in use | Run `clear mex` in MATLAB and stop the producer. |
+
+## Citation
+
+If you use actiCHampConnect in your research, please cite it. The citation data is in [CITATION.cff](CITATION.cff). On GitHub, the button **Cite this repository** on the right side of the repository page gives it in APA and BibTeX format.
+
+> Kreilinger, L. (2026). actiCHampConnect (Version 1.0.0) [Computer software]. https://github.com/LKreilinger/actiCHampConnect
 
 ## Disclaimer
 
