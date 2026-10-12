@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "actiCHampConnect"
+abstract: >-
+  Connects MATLAB or Python directly to a Brain Products actiCHamp (Plus)
+  amplifier. Reads electrode impedances and EEG data without BrainVision
+  Recorder, LSL or any other additional software.
+authors:
+  - family-names: "Kreilinger"
+    given-names: "Laurens"
+repository-code: "https://github.com/LKreilinger/actiCHampConnect"
+url: "https://github.com/LKreilinger/actiCHampConnect"
+license: Apache-2.0
+version: "1.0.0"
+date-released: "2026-10-12"
+keywords:
+  - EEG
+  - actiCHamp
+  - Brain Products
+  - MATLAB
+  - Python
