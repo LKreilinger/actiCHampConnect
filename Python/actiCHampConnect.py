@@ -34,6 +34,9 @@ FILE_MAP_ALL_ACCESS = 0xF001F
 EVENT_MODIFY_STATE = 0x0002
 SYNCHRONIZE = 0x00100000
 CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_CONSOLE = 0x00000010
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+STILL_ACTIVE = 259
 
 DEFAULT_PRODUCER_DIR = Path(__file__).resolve().parent.parent / "Producer"
 
@@ -71,7 +74,6 @@ class ActiCHampDevice:
         self.timeout = float(timeout)
         self.fs = 0.0
         self._process = None
-        self._log = None
         self._ptr = None      # address of the mapped view
         self._shm = None      # SharedBuffer living in the mapped view
         self._data = None     # numpy view on SharedBuffer.data
@@ -92,14 +94,8 @@ class ActiCHampDevice:
         if not exe.exists():
             raise FileNotFoundError(f"Producer not found: {exe}")
 
-        tasks = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {exe.name}", "/FO", "CSV", "/NH"],
-            capture_output=True, creationflags=CREATE_NO_WINDOW,
-        ).stdout
-        if exe.name.lower().encode() in tasks.lower():
-            raise RuntimeError(
-                f"{exe.name} is already running. Stop it first, e.g. in the Task Manager."
-            )
+        # A producer left over from a previous run still owns the amplifier. Close it first.
+        self._close_running_producer(exe.name)
 
         # The shared memory can outlive the producer while another program (e.g. an open
         # MATLAB that used the MEX functions) still holds it. A new producer then reuses
@@ -115,13 +111,11 @@ class ActiCHampDevice:
             self._unmap(stale)
 
         # The producer needs its own folder as working directory (DLLs, *.bit files).
-        self._log = open(self.producer_dir / "EEG_SharedMemoryProducer.log", "w", encoding="utf-8")
+        # It gets its own console window that shows its output, as in MATLAB.
         self._process = subprocess.Popen(
             [str(exe)],
             cwd=str(self.producer_dir),
-            stdout=self._log,
-            stderr=subprocess.STDOUT,
-            creationflags=CREATE_NO_WINDOW,
+            creationflags=CREATE_NEW_CONSOLE,
         )
 
         deadline = time.time() + self.timeout
@@ -169,7 +163,7 @@ class ActiCHampDevice:
 
         The producer maps fs to the nearest supported rate: 100, 200, 500, 1000,
         2000, 2500, 5000, 10000, 20000, 25000, 50000 or 100000 Hz. The applied
-        rate is written to EEG_SharedMemoryProducer.log.
+        rate is shown in the console window of the producer.
         """
         self._require_connection()
         if self.fs > 0:
@@ -237,17 +231,9 @@ class ActiCHampDevice:
 
     def disconnect(self):
         """Stop the producer (releases the amplifier) and detach from the shared memory."""
-        kernel32 = ctypes.windll.kernel32
         if self._shm is not None:
             self._shm.control.stopRequested = True
-            kernel32.OpenEventW.restype = wintypes.HANDLE
-            kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
-            kernel32.SetEvent.argtypes = [wintypes.HANDLE]
-            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-            event = kernel32.OpenEventW(EVENT_MODIFY_STATE | SYNCHRONIZE, False, STOP_EVENT_NAME)
-            if event:
-                kernel32.SetEvent(event)
-                kernel32.CloseHandle(event)
+            self._signal_stop_event()
 
         if self._process is not None:
             try:
@@ -255,9 +241,6 @@ class ActiCHampDevice:
             except subprocess.TimeoutExpired:
                 self._process.kill()
             self._process = None
-        if self._log is not None:
-            self._log.close()
-            self._log = None
 
         self._data = None
         self._shm = None
@@ -267,6 +250,72 @@ class ActiCHampDevice:
         self.fs = 0.0
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _producer_running(exe_name):
+        tasks = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, errors="replace", creationflags=CREATE_NO_WINDOW,
+        ).stdout
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        for line in tasks.splitlines():
+            fields = line.strip().strip('"').split('","')
+            if len(fields) < 2 or fields[0].lower() != exe_name.lower():
+                continue
+            # tasklist also lists processes that already exited but are not cleaned up yet
+            # (same test as Process.HasExited on the MATLAB side).
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(fields[1]))
+            if not handle:
+                return True
+            code = wintypes.DWORD(STILL_ACTIVE)
+            kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            kernel32.CloseHandle(handle)
+            if code.value == STILL_ACTIVE:
+                return True
+        return False
+
+    @staticmethod
+    def _signal_stop_event():
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenEventW.restype = wintypes.HANDLE
+        kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        event = kernel32.OpenEventW(EVENT_MODIFY_STATE | SYNCHRONIZE, False, STOP_EVENT_NAME)
+        if event:
+            kernel32.SetEvent(event)
+            kernel32.CloseHandle(event)
+
+    def _close_running_producer(self, exe_name):
+        """Stop a producer that is already running, e.g. left over from a crashed script."""
+        if not self._producer_running(exe_name):
+            return
+        print(f"{exe_name} is already running, closing it.")
+
+        # Ask it to stop first, so it can release the amplifier properly.
+        try:
+            ptr = self._open_mapping()
+        except RuntimeError:
+            ptr = None   # producer with another layout, can only be killed
+        if ptr is not None:
+            SharedBuffer.from_address(ptr).control.stopRequested = True
+            self._unmap(ptr)
+        self._signal_stop_event()
+
+        deadline = time.time() + self.timeout
+        while self._producer_running(exe_name):
+            if time.time() > deadline:
+                subprocess.run(["taskkill", "/F", "/IM", exe_name],
+                               capture_output=True, creationflags=CREATE_NO_WINDOW)
+                time.sleep(0.5)
+                if self._producer_running(exe_name):
+                    raise RuntimeError(f"{exe_name} is still running and could not be closed.")
+                break
+            time.sleep(0.1)
+
     def _open_mapping(self):
         """Map the shared memory block. Returns its address or None if it does not exist."""
         kernel32 = ctypes.windll.kernel32
@@ -303,9 +352,8 @@ class ActiCHampDevice:
     def _check_producer_alive(self):
         if self._process is not None and self._process.poll() is not None:
             code = self._process.returncode
-            log = self.producer_dir / "EEG_SharedMemoryProducer.log"
             self.disconnect()
             raise RuntimeError(
                 f"Producer exited (code {code}). Is the actiCHamp connected via USB, powered "
-                f"and not in use by another program (e.g. BrainVision Recorder)? See {log}"
+                f"and not in use by another program (e.g. BrainVision Recorder)?"
             )

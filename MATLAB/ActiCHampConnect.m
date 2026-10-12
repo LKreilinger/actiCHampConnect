@@ -16,9 +16,28 @@ if ~isfile(exeFile)
 end
 
 NET.addAssembly('System');
-if System.Diagnostics.Process.GetProcessesByName(exeName).Length > 0
-    error(['%s.exe is already running. Stop it first with StopProducer() ' ...
-        'or end it in the Task Manager.'], exeName);
+
+% A producer left over from a previous run still owns the amplifier. Close it first.
+running = System.Diagnostics.Process.GetProcessesByName(exeName);
+if running.Length > 0
+    fprintf('%s.exe is already running, closing it.\n', exeName);
+    % Ask it to stop first, so it can release the amplifier properly.
+    try
+        StopProducer();
+    catch
+    end
+    for k = 1:running.Length
+        old = running(k);
+        if ~old.WaitForExit(round(timeout * 1000))
+            try
+                old.Kill();
+            catch
+            end
+            if ~old.WaitForExit(2000)
+                error('%s.exe is still running and could not be closed.', exeName);
+            end
+        end
+    end
 end
 
 % Start the producer. It needs its own folder as working directory

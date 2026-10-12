@@ -47,3 +47,5 @@ disp(size(data))
 
 %% Stop data acquisition
 ActiCHampDisconnect(proc, timeout);
+
+

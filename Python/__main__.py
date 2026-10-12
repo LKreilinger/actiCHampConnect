@@ -31,6 +31,7 @@ if __name__ == '__main__':
 
         # Get data: samples x 43 columns
         # columns 0-31: EEG / µV, columns 32-39: AUX 1-8, see README
+        print('Start collecting %d samples...' % samples)
         data = actichamp.get_data(samples)
         eeg = data[:, :numEEG]
 

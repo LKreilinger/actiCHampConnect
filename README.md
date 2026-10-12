@@ -106,7 +106,7 @@ python __main__.py
 | `lost_samples()` | Number of samples the producer had to drop because the ring buffer was full. |
 | `disconnect()` | Stops the producer and releases the amplifier. |
 
-The producer runs without a window when it is started from Python. Its console output is written to `Producer/EEG_SharedMemoryProducer.log`.
+The producer opens its own console window when it is started from Python, as in MATLAB. It shows the amplifiers found and the applied sampling rate, and closes when the producer stops.
 
 ## Data format
 
@@ -273,7 +273,7 @@ print(ctypes.sizeof(SharedBuffer), SharedBuffer.impedances.offset, SharedBuffer.
 | Problem | Likely cause and solution |
 |---|---|
 | "Producer exited" directly after connecting | The producer found no amplifier. Check USB cable, power and driver. Close BrainVision Recorder and other programs that use the amplifier. The producer output shows `Found 0 devices.` |
-| "EEG_SharedMemoryProducer.exe is already running" | A previous run was not stopped. End the process in the Task Manager, or call `StopProducer()` in MATLAB. |
+| "EEG_SharedMemoryProducer.exe is already running, closing it." | A previous run was not stopped. Connecting closes the old producer automatically (it is asked to stop and killed after `timeout` seconds). No action needed. |
 | The producer window closes at once and a DLL is reported missing | The `.dll` and `.bit` files must be in the same folder as the `.exe`. A self-compiled producer may also need the Visual C++ Redistributable if it was not built with `/MT`. |
 | MATLAB hangs in `ReadHybridMemory` | No samples arrive, for example because the producer crashed. The function cannot be interrupted, so MATLAB has to be ended in the Task Manager. End `EEG_SharedMemoryProducer.exe` there as well. |
 | `GetImpedances` returns only -1 or an empty array | The first measurement takes a moment. If it stays like this, check the electrode connection and the reference and ground electrodes. |
